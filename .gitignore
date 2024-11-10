@@ -1,0 +1,10 @@
+env/
+
+build/
+dist/
+dt.spec
+
+*.log
+*.tmp
+*.DS_Store
+
