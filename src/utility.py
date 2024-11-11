@@ -14,64 +14,113 @@ def read_file(file_path):
         file_path (str): Path to the file.
 
     Returns:
-        list[str]: Lines of the file content.
+        tuple[str, list[str]]: A tuple containing the file name and lines of the file content.
     """
     expanded_path = Path(file_path).expanduser()
     if not expanded_path.is_file():
         print(f"Error: File not found - {expanded_path}")
         sys.exit(1)
     with open(expanded_path, "r") as f:
-        return f.readlines()
+        return expanded_path.name, f.readlines()
 
 
-def highlight_diff(file1, file2, context_lines=3):
+def highlight_diff(file1, file2):
     """
-    Compare two files and output highlighted differences with line numbers, showing context.
+    Compare two files and output differences with clear file labels and custom highlighting.
 
     Args:
-        file1 (list[str]): First file content (lines).
-        file2 (list[str]): Second file content (lines).
-        context_lines (int): Number of context lines around changes.
+        file1 (tuple[str, list[str]]): Tuple containing the first file's name and content.
+        file2 (tuple[str, list[str]]): Tuple containing the second file's name and content.
     """
+    file_name1, file_content1 = file1
+    file_name2, file_content2 = file2
+
     console = Console()
     d = Differ()
 
-    diff = list(d.compare(file1, file2))
+    diff = list(d.compare(file_content1, file_content2))
     line_number1 = 0
     line_number2 = 0
-    output_buffer = []
-    show_diff = False
+    temp_output = {"removed": None, "added": None, "line": None}
+    pending_removal = False  # Flag to handle consecutive `-` lines
 
     for i, line in enumerate(diff):
         if line.startswith("  "):  # Unchanged line
             line_number1 += 1
             line_number2 += 1
-            if show_diff:
-                output_buffer.append((line_number1, line_number2, "  ", line[2:]))
+
+            # Print accumulated changes if any
+            if temp_output["removed"] or temp_output["added"]:
+                console.print(f"in {temp_output['line']} line:")
+                if temp_output["removed"]:
+                    console.print(
+                        Text("(-)", style="bold #f87171"),
+                        f"{file_name1}: ",
+                        Text(temp_output["removed"], style="bold #f87171"),
+                        end="",
+                    )
+                if temp_output["added"]:
+                    console.print(
+                        Text("(+)", style="bold #a3e635"),
+                        f"{file_name2}: ",
+                        Text(temp_output["added"], style="bold #a3e635"),
+                    )
+                temp_output = {"removed": None, "added": None, "line": None}
+                pending_removal = False
+
         elif line.startswith("- "):  # Removed line
             line_number1 += 1
-            show_diff = True
-            output_buffer.append((line_number1, None, "- ", line[2:]))
+            if temp_output["removed"]:
+                # Print the previous removed line before handling the next
+                console.print(f"in {temp_output['line']} line:")
+                console.print(
+                    Text("(-)", style="bold #f87171"),
+                    f"{file_name1}: ",
+                    Text(temp_output["removed"], style="bold #f87171"),
+                )
+            temp_output["removed"] = line[2:]
+            temp_output["line"] = line_number1
+            pending_removal = True  # Set the flag for consecutive `-` lines
+
         elif line.startswith("+ "):  # Added line
             line_number2 += 1
-            show_diff = True
-            output_buffer.append((None, line_number2, "+ ", line[2:]))
-        elif line.startswith("? "):  # Markers for changes
-            continue  # Skip detailed change markers
+            if temp_output["removed"]:
+                # If there's a removal, print both together
+                console.print(f"in {temp_output['line']} line:")
+                console.print(
+                    Text("(-)", style="bold #f87171"),
+                    f"{file_name1}: ",
+                    Text(temp_output["removed"], style="bold #f87171"),
+                    end="",
+                )
+                console.print(
+                    Text("(+)", style="bold #a3e635"),
+                    f"{file_name2}: ",
+                    Text(line[2:], style="bold #a3e635"),
+                )
+                temp_output = {"removed": None, "added": None, "line": None}
+                pending_removal = False
+            else:
+                # Otherwise, print added line separately
+                console.print(f"in {line_number2} line:")
+                console.print(
+                    Text("(+)", style="bold #a3e635"),
+                    f"{file_name2}: ",
+                    Text(line[2:], style="bold #a3e635"),
+                )
 
-        # Flush context if no changes in the next few lines
-        if show_diff and (i + 1 == len(diff) or diff[i + 1].startswith("  ")):
-            for idx, (ln1, ln2, prefix, content) in enumerate(output_buffer):
-                if idx < context_lines or idx >= len(output_buffer) - context_lines:
-                    if prefix == "  ":
-                        console.print(f"{ln1:>4} | {ln2:>4} | {content}")
-                    elif prefix == "- ":
-                        console.print(
-                            f"{ln1:>4} | {' ' * 4} |", Text(content, style="bold red")
-                        )
-                    elif prefix == "+ ":
-                        console.print(
-                            f"{' ' * 4} | {ln2:>4} |", Text(content, style="bold green")
-                        )
-            output_buffer.clear()
-            show_diff = False
+    # Handle any leftover changes after the loop
+    if temp_output["removed"]:
+        console.print(f"in {temp_output['line']} line:")
+        console.print(
+            Text("(-)", style="bold #f87171"),
+            f"{file_name1}: ",
+            Text(temp_output["removed"], style="bold #f87171"),
+        )
+    if temp_output["added"]:
+        console.print(f"in {temp_output['line']} line:")
+        console.print(
+            Text("(+)", style="bold #a3e635"),
+            f"{file_name2}: ",
+            Text(temp_output["added"], style="bold #a3e635"),
+        )
