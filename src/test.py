@@ -1,5 +1,5 @@
 import os
-from index import read_file, highlight_diff
+from utility import read_file, highlight_diff
 
 def main():
     a_txt = 'test_data/a.txt'
